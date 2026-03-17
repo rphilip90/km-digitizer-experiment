@@ -88,6 +88,52 @@ const Calibration = {
         this.updateInstructions();
     },
 
+    // Apply an automatically detected plot box and axis values
+    applyDetectedCalibration(plotBounds, axes) {
+        if (!plotBounds || !axes?.x || !axes?.y) return;
+
+        this.isCalibrating = false;
+        this.calibrationStep = 0;
+        this.isComplete = true;
+        this.points = {
+            xMin: { x: plotBounds.left, y: plotBounds.bottom },
+            xMax: { x: plotBounds.right, y: plotBounds.bottom },
+            yMin: { x: plotBounds.left, y: plotBounds.bottom },
+            yMax: { x: plotBounds.left, y: plotBounds.top }
+        };
+        this.values = {
+            xMin: axes.x.min,
+            xMax: axes.x.max,
+            yMin: axes.y.min,
+            yMax: axes.y.max
+        };
+
+        const xMinInput = document.getElementById('xMin');
+        const xMaxInput = document.getElementById('xMax');
+        const yMinInput = document.getElementById('yMin');
+        const yMaxInput = document.getElementById('yMax');
+
+        if (xMinInput) xMinInput.value = axes.x.min;
+        if (xMaxInput) xMaxInput.value = axes.x.max;
+        if (yMinInput) yMinInput.value = axes.y.min;
+        if (yMaxInput) yMaxInput.value = axes.y.max;
+
+        if (axes.x.tickStep && typeof Canvas !== 'undefined') {
+            Canvas.gridSpacingX = axes.x.tickStep;
+            const gridXInput = document.getElementById('gridSpacingX');
+            if (gridXInput) gridXInput.value = axes.x.tickStep;
+        }
+
+        if (axes.y.tickStep && typeof Canvas !== 'undefined') {
+            Canvas.gridSpacingY = axes.y.tickStep;
+            const gridYInput = document.getElementById('gridSpacingY');
+            if (gridYInput) gridYInput.value = axes.y.tickStep;
+        }
+
+        this.updateUI();
+        this.updateInstructions();
+    },
+
     // Convert pixel coordinates to data coordinates
     pixelToData(px, py) {
         if (!this.isComplete) return null;

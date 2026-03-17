@@ -8,6 +8,9 @@ const App = {
     // Initialize application
     init() {
         Canvas.init();
+        if (typeof Extraction !== 'undefined') {
+            Extraction.init();
+        }
         this.setupEventListeners();
         this.setupDropZone();
         this.setupPasteHandler();
@@ -20,9 +23,21 @@ const App = {
             document.getElementById('fileInput').click();
         });
 
+        document.getElementById('browseFolderBtn').addEventListener('click', () => {
+            document.getElementById('folderInput').click();
+        });
+
         document.getElementById('fileInput').addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 this.loadImageFile(e.target.files[0]);
+            }
+        });
+
+        document.getElementById('folderInput').addEventListener('change', async (e) => {
+            if (e.target.files.length > 0) {
+                this.showMainContent();
+                await Extraction.processFolder(e.target.files, { includeRiskTable: true });
+                e.target.value = '';
             }
         });
 
@@ -34,6 +49,9 @@ const App = {
                     for (const type of item.types) {
                         if (type.startsWith('image/')) {
                             const blob = await item.getType(type);
+                            if (!blob.name) {
+                                blob.name = `clipboard-${Date.now()}.png`;
+                            }
                             this.loadImageFile(blob);
                             return;
                         }
@@ -95,6 +113,14 @@ const App = {
             Export.downloadCSV();
         });
 
+        document.getElementById('exportWorkbookBtn').addEventListener('click', () => {
+            Export.downloadExcel();
+        });
+
+        document.getElementById('exportWorkbookBtnPanel').addEventListener('click', () => {
+            Export.downloadExcel();
+        });
+
         document.getElementById('copyBtn').addEventListener('click', () => {
             Export.copyToClipboard();
         });
@@ -102,6 +128,22 @@ const App = {
         // Report button
         document.getElementById('reportBtn').addEventListener('click', () => {
             Report.downloadReport();
+        });
+
+        document.getElementById('autoExtractBtn').addEventListener('click', async () => {
+            await Extraction.autoExtractCurrent({ includeRiskTable: false });
+        });
+
+        document.getElementById('autoExtractRiskBtn').addEventListener('click', async () => {
+            await Extraction.autoExtractCurrent({ includeRiskTable: true });
+        });
+
+        document.getElementById('openBatchBtn').addEventListener('click', () => {
+            document.getElementById('folderInput').click();
+        });
+
+        document.getElementById('approveCleanBtn').addEventListener('click', () => {
+            Extraction.approveCleanJobs();
         });
 
         // Undo/redo buttons (footer)
@@ -253,6 +295,9 @@ const App = {
                     if (item.type.startsWith('image/')) {
                         const file = item.getAsFile();
                         if (file) {
+                            if (!file.name) {
+                                file.name = `clipboard-${Date.now()}.png`;
+                            }
                             this.loadImageFile(file);
                             return;
                         }
@@ -264,6 +309,9 @@ const App = {
                 if (files && files.length > 0) {
                     for (const file of files) {
                         if (file.type.startsWith('image/')) {
+                            if (!file.name) {
+                                file.name = `clipboard-${Date.now()}.png`;
+                            }
                             this.loadImageFile(file);
                             return;
                         }
@@ -283,8 +331,15 @@ const App = {
     loadImageFile(file) {
         const reader = new FileReader();
         reader.onload = (e) => {
-            Canvas.loadImage(e.target.result).then(() => {
+            Canvas.loadImage(e.target.result, { fileName: file.name }).then(() => {
                 this.showMainContent();
+                if (typeof Extraction !== 'undefined') {
+                    Extraction.activeJobId = null;
+                    Extraction.attachCurrentImage({
+                        fileName: file.name,
+                        imageSrc: e.target.result
+                    });
+                }
             });
         };
         reader.readAsDataURL(file);
@@ -297,7 +352,11 @@ const App = {
         document.getElementById('footer').style.display = 'flex';
 
         // Trigger resize to fit canvas properly
-        setTimeout(() => Canvas.fitImage(), 100);
+        setTimeout(() => {
+            if (Canvas.image) {
+                Canvas.fitImage();
+            }
+        }, 100);
     },
 
     // Show curve modal
@@ -348,6 +407,9 @@ const App = {
 
     // Save state for undo
     saveState() {
+        if (typeof Extraction !== 'undefined') {
+            Extraction.syncCurrentCurveStateFromWorkspace();
+        }
         const state = Curves.serialize();
 
         // Don't save duplicate states
@@ -378,6 +440,9 @@ const App = {
         // Restore previous state
         const state = this.undoStack.pop();
         Curves.deserialize(state);
+        if (typeof Extraction !== 'undefined') {
+            Extraction.syncCurrentCurveStateFromWorkspace();
+        }
         if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
             Canvas.clearInteractionGuides();
         }
@@ -396,6 +461,9 @@ const App = {
         // Restore redo state
         const state = this.redoStack.pop();
         Curves.deserialize(state);
+        if (typeof Extraction !== 'undefined') {
+            Extraction.syncCurrentCurveStateFromWorkspace();
+        }
         if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
             Canvas.clearInteractionGuides();
         }
@@ -423,6 +491,9 @@ const App = {
         Canvas.clear();
         Curves.clearAll();
         Calibration.clear();
+        if (typeof Extraction !== 'undefined') {
+            Extraction.reset();
+        }
         this.undoStack = [];
         this.redoStack = [];
         this.updateUndoRedoButtons();

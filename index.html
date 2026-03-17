@@ -16,7 +16,7 @@
             </div>
         </header>
 
-        <div id="dropZone" class="drop-zone">
+            <div id="dropZone" class="drop-zone">
             <div class="drop-icon">
                 <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -40,8 +40,10 @@
                 </div>
             </div>
             <input type="file" id="fileInput" accept="image/*" hidden>
+            <input type="file" id="folderInput" accept="image/*" webkitdirectory multiple hidden>
             <div class="drop-buttons">
                 <button id="browseBtn" class="btn btn-primary">Browse Files</button>
+                <button id="browseFolderBtn" class="btn btn-primary">Browse Folder</button>
                 <button id="pasteBtn" class="btn btn-secondary">Paste from Clipboard</button>
             </div>
         </div>
@@ -144,6 +146,23 @@
                 </section>
 
                 <section class="panel">
+                    <h3>Extraction</h3>
+                    <p class="panel-hint">Semantic KM extraction with optional OCR review</p>
+                    <div class="extraction-actions">
+                        <button id="autoExtractBtn" class="btn btn-primary btn-full">Auto-extract KM</button>
+                        <button id="autoExtractRiskBtn" class="btn btn-secondary btn-full">Auto-extract KM + Risk Table</button>
+                        <button id="openBatchBtn" class="btn btn-secondary btn-full">Batch Folder Processing</button>
+                    </div>
+                    <div id="extractionStatus" class="extraction-status idle">
+                        <span class="status-dot pending"></span>
+                        <span>No extraction run yet</span>
+                    </div>
+                    <div id="extractionSummary" class="extraction-summary empty">
+                        Load an image, then run semantic extraction or a folder batch.
+                    </div>
+                </section>
+
+                <section class="panel">
                     <h3>Study Info</h3>
                     <p class="panel-hint">Applies to all curves</p>
                     <div class="metadata-fields">
@@ -177,6 +196,27 @@
                         <div id="pointsList" class="points-list"></div>
                     </div>
                 </section>
+
+                <section class="panel">
+                    <h3>Risk Table</h3>
+                    <p class="panel-hint">OCR + review for numbers-at-risk tables</p>
+                    <div id="riskTableStatus" class="risk-table-status empty">No risk table extracted.</div>
+                    <div id="riskTableWarnings" class="warning-list"></div>
+                    <div id="riskTableEditor" class="risk-table-editor empty">
+                        Run "Auto-extract KM + Risk Table" to populate this review grid.
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <h3>Batch Queue</h3>
+                    <p class="panel-hint">Folder processing review queue</p>
+                    <div class="batch-actions">
+                        <button id="approveCleanBtn" class="btn btn-secondary btn-full" disabled>Approve Clean Jobs</button>
+                        <button id="exportWorkbookBtnPanel" class="btn btn-primary btn-full" disabled>Export Workbook</button>
+                    </div>
+                    <div id="batchSummary" class="batch-summary empty">No folder loaded.</div>
+                    <div id="batchJobs" class="batch-jobs empty">Use "Browse Folder" or "Batch Folder Processing" to build a review queue.</div>
+                </section>
             </div>
         </main>
 
@@ -191,6 +231,7 @@
             <div class="footer-right">
                 <button id="copyBtn" class="btn btn-secondary">Copy CSV</button>
                 <button id="exportBtn" class="btn btn-secondary">Export CSV</button>
+                <button id="exportWorkbookBtn" class="btn btn-secondary">Export XLSX</button>
                 <button id="reportBtn" class="btn btn-primary">Download Report</button>
             </div>
         </footer>
@@ -212,6 +253,8 @@
                 </li>
                 <li><strong>Add curves:</strong> Click "+ Add Curve" and give it a name/color</li>
                 <li><strong>Digitize points:</strong> Hover near the curve to snap to it, then click to add points</li>
+                <li><strong>Semantic extraction:</strong> Use the Extraction panel to auto-detect axes, curves, and optional risk tables</li>
+                <li><strong>Batch review:</strong> Load a folder to process many figures and review low-confidence cases before export</li>
                 <li><strong>Edit points:</strong>
                     <ul>
                         <li>Drag points to adjust position</li>
@@ -267,6 +310,7 @@
     <script src="js/canvas.js"></script>
     <script src="js/export.js"></script>
     <script src="js/report.js"></script>
+    <script src="js/extraction.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

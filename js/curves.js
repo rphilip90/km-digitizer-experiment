@@ -24,6 +24,11 @@ const Curves = {
             name: name || `Curve ${id}`,
             color: color || this.defaultColors[(id - 1) % this.defaultColors.length],
             imageColor: metadata.imageColor || null,
+            extractedConfidence: metadata.confidence || null,
+            extractionWarnings: metadata.warnings || [],
+            stepPoints: metadata.stepPoints || [],
+            censorMarks: metadata.censorMarks || [],
+            source: metadata.source || 'manual',
             treatment: metadata.treatment || '',
             population: metadata.population || '',
             line: metadata.line || '',
@@ -90,16 +95,18 @@ const Curves = {
     },
 
     // Add point to active curve
-    addPoint(pixelX, pixelY, dataX, dataY) {
+    addPoint(pixelX, pixelY, dataX, dataY, metadata = {}) {
         const curve = this.getActive();
         if (!curve) return null;
 
         const point = {
-            id: Date.now(),
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             px: pixelX,
             py: pixelY,
             x: dataX,
             y: dataY,
+            kind: metadata.kind || 'manual',
+            source: metadata.source || curve.source || 'manual'
         };
         curve.points.push(point);
 
@@ -265,7 +272,7 @@ const Curves = {
         // Add delete handlers
         container.querySelectorAll('.point-delete').forEach(btn => {
             btn.addEventListener('click', () => {
-                this.deletePoint(parseInt(btn.dataset.id));
+                this.deletePoint(btn.dataset.id);
                 if (typeof Canvas !== 'undefined') Canvas.draw();
                 if (typeof App !== 'undefined') App.saveState();
             });
@@ -276,7 +283,8 @@ const Curves = {
     updateStatus() {
         const statusEl = document.getElementById('statusText');
         if (statusEl) {
-            statusEl.textContent = `Points: ${this.getTotalPointCount()} | Curves: ${this.curves.length}`;
+            const extractedCount = this.curves.filter(curve => curve.source === 'semantic').length;
+            statusEl.textContent = `Points: ${this.getTotalPointCount()} | Curves: ${this.curves.length}${extractedCount > 0 ? ` | Extracted: ${extractedCount}` : ''}`;
         }
     },
 

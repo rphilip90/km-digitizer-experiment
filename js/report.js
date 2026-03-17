@@ -2,6 +2,12 @@
 const Report = {
     // Get metadata from form fields
     getMetadata() {
+        if (typeof Extraction !== 'undefined') {
+            Extraction.syncCurrentCurveStateFromWorkspace();
+        }
+        const session = typeof Export !== 'undefined' && typeof Export.getCurrentExportSession === 'function'
+            ? Export.getCurrentExportSession()
+            : null;
         return {
             source: document.getElementById('studySource')?.value || '',
             study: document.getElementById('studyName')?.value || '',
@@ -13,7 +19,13 @@ const Report = {
                 xMax: Calibration.values.xMax,
                 yMin: Calibration.values.yMin,
                 yMax: Calibration.values.yMax
-            }
+            },
+            extraction: session ? {
+                status: session.status,
+                confidence: session.confidence,
+                warnings: session.warnings || [],
+                riskTable: session.riskTable || null
+            } : null
         };
     },
 
@@ -71,14 +83,49 @@ const Report = {
         return html;
     },
 
+    generateRiskTableHTML() {
+        const session = typeof Export !== 'undefined' && typeof Export.getCurrentExportSession === 'function'
+            ? Export.getCurrentExportSession()
+            : null;
+        const riskTable = session?.riskTable;
+        if (!riskTable || !riskTable.rows || riskTable.rows.length === 0) {
+            return '<p>No numbers-at-risk table extracted.</p>';
+        }
+
+        const header = riskTable.timepoints.map(value => `<th>${value}</th>`).join('');
+        const rows = riskTable.rows.map(row => `
+            <tr>
+                <th>${row.label}</th>
+                ${row.values.map(value => `<td>${value}</td>`).join('')}
+            </tr>
+        `).join('');
+
+        return `
+            <p style="margin-bottom: 10px;">OCR confidence: ${(riskTable.confidence || 0).toFixed(2)}</p>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Group</th>
+                        ${header}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows}
+                </tbody>
+            </table>
+        `;
+    },
+
     // Generate full report HTML
     generateReportHTML() {
         const metadata = this.getMetadata();
         const canvasImage = this.captureCanvas();
         const dataTable = this.generateDataTable();
         const curves = Curves.getAll();
+        const riskTableHTML = this.generateRiskTableHTML();
 
         const totalPoints = curves.reduce((sum, c) => sum + c.points.length, 0);
+        const extractionWarnings = metadata.extraction?.warnings || [];
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -281,16 +328,18 @@ const Report = {
         </div>
     </div>
 
-    <div class="summary">
-        <h3>Summary</h3>
-        <p><strong>Curves digitized:</strong> ${curves.length}</p>
-        <p><strong>Total data points:</strong> ${totalPoints}</p>
-        <div class="calibration-info">
-            <strong>Axis calibration:</strong>
-            X: ${metadata.calibration.xMin} to ${metadata.calibration.xMax} |
-            Y: ${metadata.calibration.yMin} to ${metadata.calibration.yMax}
+        <div class="summary">
+            <h3>Summary</h3>
+            <p><strong>Curves digitized:</strong> ${curves.length}</p>
+            <p><strong>Total data points:</strong> ${totalPoints}</p>
+            ${metadata.extraction ? `<p><strong>Extraction status:</strong> ${metadata.extraction.status || 'n/a'} | <strong>Confidence:</strong> ${(metadata.extraction.confidence || 0).toFixed(2)}</p>` : ''}
+            <div class="calibration-info">
+                <strong>Axis calibration:</strong>
+                X: ${metadata.calibration.xMin} to ${metadata.calibration.xMax} |
+                Y: ${metadata.calibration.yMin} to ${metadata.calibration.yMax}
+            </div>
+            ${extractionWarnings.length > 0 ? `<div class="calibration-info"><strong>Warnings:</strong> ${extractionWarnings.join(' | ')}</div>` : ''}
         </div>
-    </div>
 
     <div class="figure-section">
         <h2>Digitized Figure</h2>
@@ -302,6 +351,11 @@ const Report = {
     <div class="data-section">
         <h2>Extracted Data</h2>
         ${dataTable}
+    </div>
+
+    <div class="data-section">
+        <h2>Numbers at Risk</h2>
+        ${riskTableHTML}
     </div>
 
     <div class="csv-section">

@@ -4,6 +4,8 @@ const Canvas = {
     ctx: null,
     image: null,
     imageData: null,
+    imageSrc: '',
+    imageFileName: '',
     scale: 1,
     baseScale: 1,  // Scale to fit image in container
     zoomLevel: 1,  // User zoom multiplier
@@ -74,11 +76,13 @@ const Canvas = {
     },
 
     // Load image onto canvas
-    loadImage(src) {
+    loadImage(src, meta = {}) {
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.onload = () => {
                 this.image = img;
+                this.imageSrc = src;
+                this.imageFileName = meta.fileName || this.imageFileName || '';
                 this.cacheImageData();
                 this.clearInteractionGuides();
                 this.fitImage();
@@ -547,6 +551,10 @@ const Canvas = {
                 this.image.width * this.scale,
                 this.image.height * this.scale
             );
+        }
+
+        if (typeof Extraction !== 'undefined' && typeof Extraction.drawOverlay === 'function') {
+            Extraction.drawOverlay(this);
         }
 
         // Draw grid (if enabled and calibrated)
@@ -1304,6 +1312,8 @@ const Canvas = {
     clear() {
         this.image = null;
         this.imageData = null;
+        this.imageSrc = '';
+        this.imageFileName = '';
         this.zoomLevel = 1;
         this.panX = 0;
         this.panY = 0;
