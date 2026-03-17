@@ -4,7 +4,7 @@
 A web-based tool for digitizing Kaplan-Meier and Cumulative Incidence Function curves from published images. Built for HTA/HEOR work.
 
 ## Status
-This browser-first prototype is now parked for experimental/manual use only. The experimental semantic extractor and batch flow are not reliable enough for production KM/CAM extraction. New production-facing automation is moving to a separate hosted `SurvdigitizeR` workflow.
+This browser-first prototype is now parked for experimental/manual use only. The experimental semantic extractor and batch flow are not reliable enough for production KM/CAM extraction. New production-facing automation is moving to a separate hosted `SurvdigitizeR` workflow: https://github.com/rphilip90/km-survdigitizer-oracle
 
 ## Live URL
 https://rphilip90.github.io/km-digitizer/
