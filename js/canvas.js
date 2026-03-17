@@ -728,6 +728,10 @@ const Canvas = {
         const rightCanvasX = bounds.right * this.scale + this.offsetX;
         const topCanvasY = bounds.top * this.scale + this.offsetY;
         const bottomCanvasY = bounds.bottom * this.scale + this.offsetY;
+        const imageLeft = this.offsetX;
+        const imageRight = this.offsetX + this.image.width * this.scale;
+        const imageTop = this.offsetY;
+        const imageBottom = this.offsetY + this.image.height * this.scale;
 
         const guideColor = persistent ? 'rgba(255, 152, 0, 0.78)' : 'rgba(255, 193, 7, 0.94)';
         const labelColor = persistent ? 'rgba(255, 152, 0, 0.95)' : 'rgba(33, 33, 33, 0.92)';
@@ -762,20 +766,30 @@ const Canvas = {
         this.ctx.stroke();
         this.ctx.restore();
 
-        this.drawGuideLabel(
+        this.drawXAxisGuideLabel(
             pointCanvasX,
-            Math.min(this.canvas.height - 12, bottomCanvasY + 20),
+            bottomCanvasY,
             guideState.dataX.toFixed(2),
             labelColor,
-            'center'
+            {
+                left: Math.max(imageLeft, leftCanvasX),
+                right: Math.min(imageRight, rightCanvasX),
+                top: Math.max(4, imageTop),
+                bottom: Math.min(this.canvas.height - 4, imageBottom)
+            }
         );
 
-        this.drawGuideLabel(
-            Math.max(12, leftCanvasX - 10),
+        this.drawYAxisGuideLabel(
+            leftCanvasX,
             pointCanvasY,
             guideState.dataY.toFixed(3),
             labelColor,
-            'right'
+            {
+                left: Math.max(4, imageLeft),
+                right: Math.min(this.canvas.width - 4, imageRight),
+                top: Math.max(imageTop, topCanvasY),
+                bottom: Math.min(imageBottom, bottomCanvasY)
+            }
         );
     },
 
@@ -814,33 +828,73 @@ const Canvas = {
         this.ctx.restore();
     },
 
-    // Draw a compact guide label near an axis intercept
-    drawGuideLabel(anchorX, anchorY, text, backgroundColor, align = 'center') {
+    // Measure the label box needed for a guide value
+    getGuideLabelMetrics(text) {
+        this.ctx.save();
+        this.ctx.font = '12px sans-serif';
+        const paddingX = 6;
+        const textWidth = this.ctx.measureText(text).width;
+        this.ctx.restore();
+
+        return {
+            width: textWidth + paddingX * 2,
+            height: 20,
+            paddingX
+        };
+    },
+
+    // Draw a guide label box at an explicit position
+    drawGuideLabelBox(boxX, boxY, text, backgroundColor) {
         this.ctx.save();
         this.ctx.font = '12px sans-serif';
         this.ctx.textBaseline = 'middle';
-
-        const paddingX = 6;
-        const paddingY = 4;
-        const textWidth = this.ctx.measureText(text).width;
-        const boxWidth = textWidth + paddingX * 2;
-        const boxHeight = 20;
-
-        let boxX = anchorX - boxWidth / 2;
-        if (align === 'right') {
-            boxX = anchorX - boxWidth;
-        } else if (align === 'left') {
-            boxX = anchorX;
-        }
-
-        boxX = Math.max(4, Math.min(this.canvas.width - boxWidth - 4, boxX));
-        const boxY = Math.max(4, Math.min(this.canvas.height - boxHeight - 4, anchorY - boxHeight / 2));
+        const metrics = this.getGuideLabelMetrics(text);
 
         this.ctx.fillStyle = backgroundColor;
-        this.ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+        this.ctx.fillRect(boxX, boxY, metrics.width, metrics.height);
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.fillText(text, boxX + paddingX, boxY + boxHeight / 2 + 0.5);
+        this.ctx.fillText(text, boxX + metrics.paddingX, boxY + metrics.height / 2 + 0.5);
         this.ctx.restore();
+    },
+
+    // Keep the X-value label attached to the calibrated x-axis, even when zoomed out
+    drawXAxisGuideLabel(anchorX, axisY, text, backgroundColor, bounds) {
+        const metrics = this.getGuideLabelMetrics(text);
+        const minX = Math.max(4, bounds.left + 4);
+        const maxX = Math.max(minX, bounds.right - metrics.width - 4);
+        const minY = Math.max(4, bounds.top + 4);
+        const maxY = Math.max(minY, bounds.bottom - metrics.height - 4);
+
+        let boxX = anchorX - metrics.width / 2;
+        boxX = Math.max(minX, Math.min(maxX, boxX));
+
+        let boxY = axisY + 10;
+        if (boxY > maxY) {
+            boxY = axisY - metrics.height - 10;
+        }
+        boxY = Math.max(minY, Math.min(maxY, boxY));
+
+        this.drawGuideLabelBox(boxX, boxY, text, backgroundColor);
+    },
+
+    // Keep the Y-value label attached to the calibrated y-axis, even when zoomed out
+    drawYAxisGuideLabel(axisX, anchorY, text, backgroundColor, bounds) {
+        const metrics = this.getGuideLabelMetrics(text);
+        const minX = Math.max(4, bounds.left + 4);
+        const maxX = Math.max(minX, bounds.right - metrics.width - 4);
+        const minY = Math.max(4, bounds.top + 4);
+        const maxY = Math.max(minY, bounds.bottom - metrics.height - 4);
+
+        let boxX = axisX - metrics.width - 10;
+        if (boxX < minX) {
+            boxX = axisX + 10;
+        }
+        boxX = Math.max(minX, Math.min(maxX, boxX));
+
+        let boxY = anchorY - metrics.height / 2;
+        boxY = Math.max(minY, Math.min(maxY, boxY));
+
+        this.drawGuideLabelBox(boxX, boxY, text, backgroundColor);
     },
 
     // Convert screen coordinates to image coordinates
