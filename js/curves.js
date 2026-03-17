@@ -23,6 +23,7 @@ const Curves = {
             id,
             name: name || `Curve ${id}`,
             color: color || this.defaultColors[(id - 1) % this.defaultColors.length],
+            imageColor: metadata.imageColor || null,
             treatment: metadata.treatment || '',
             population: metadata.population || '',
             line: metadata.line || '',
@@ -31,7 +32,13 @@ const Curves = {
         };
         this.curves.push(curve);
         this.activeCurveId = id;
+        if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
+            Canvas.clearInteractionGuides();
+        }
         this.updateUI();
+        if (typeof Calibration !== 'undefined') {
+            Calibration.updateInstructions();
+        }
         return curve;
     },
 
@@ -43,7 +50,13 @@ const Curves = {
             if (this.activeCurveId === id) {
                 this.activeCurveId = this.curves.length > 0 ? this.curves[0].id : null;
             }
+            if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
+                Canvas.clearInteractionGuides();
+            }
             this.updateUI();
+            if (typeof Calibration !== 'undefined') {
+                Calibration.updateInstructions();
+            }
         }
     },
 
@@ -55,10 +68,24 @@ const Curves = {
     // Set active curve
     setActive(id) {
         this.activeCurveId = id;
+        if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
+            Canvas.clearInteractionGuides();
+        }
         this.updateUI();
         // Update instructions to show active curve
         if (typeof Calibration !== 'undefined') {
             Calibration.updateInstructions();
+        }
+    },
+
+    // Store a sampled image color for snapping/highlighting
+    setImageColor(id, imageColor) {
+        const curve = this.curves.find(c => c.id === id);
+        if (curve && imageColor) {
+            curve.imageColor = imageColor;
+            if (curve.id === this.activeCurveId && typeof Calibration !== 'undefined') {
+                Calibration.updateInstructions();
+            }
         }
     },
 
@@ -127,6 +154,17 @@ const Curves = {
         return null;
     },
 
+    // Find a point by its ID across all curves
+    findPointById(pointId) {
+        for (const curve of this.curves) {
+            const point = curve.points.find(p => p.id === pointId);
+            if (point) {
+                return { curve, point };
+            }
+        }
+        return null;
+    },
+
     // Get all curves
     getAll() {
         return this.curves;
@@ -142,7 +180,13 @@ const Curves = {
         this.curves = [];
         this.activeCurveId = null;
         this.nextId = 1;
+        if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
+            Canvas.clearInteractionGuides();
+        }
         this.updateUI();
+        if (typeof Calibration !== 'undefined') {
+            Calibration.updateInstructions();
+        }
     },
 
     // Update UI elements
@@ -206,7 +250,7 @@ const Curves = {
         }
 
         if (curve.points.length === 0) {
-            container.innerHTML = '<div style="padding: 0.5rem; color: #666;">Click on image to add points</div>';
+            container.innerHTML = '<div style="padding: 0.5rem; color: #666;">Hover near the curve, then click to add points</div>';
             return;
         }
 
@@ -252,5 +296,8 @@ const Curves = {
         this.activeCurveId = parsed.activeCurveId;
         this.nextId = parsed.nextId;
         this.updateUI();
+        if (typeof Calibration !== 'undefined') {
+            Calibration.updateInstructions();
+        }
     }
 };

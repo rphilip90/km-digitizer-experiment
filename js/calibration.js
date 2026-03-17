@@ -38,6 +38,10 @@ const Calibration = {
         this.isComplete = false;
         this.points = { xMin: null, xMax: null, yMin: null, yMax: null };
 
+        if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
+            Canvas.clearInteractionGuides();
+        }
+
         this.updateUI();
         this.updateInstructions();
     },
@@ -64,6 +68,9 @@ const Calibration = {
     complete() {
         this.isCalibrating = false;
         this.isComplete = true;
+        if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
+            Canvas.clearInteractionGuides();
+        }
         this.updateUI();
         this.updateInstructions();
     },
@@ -74,6 +81,9 @@ const Calibration = {
         this.calibrationStep = 0;
         this.isComplete = false;
         this.points = { xMin: null, xMax: null, yMin: null, yMax: null };
+        if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
+            Canvas.clearInteractionGuides();
+        }
         this.updateUI();
         this.updateInstructions();
     },
@@ -155,10 +165,13 @@ const Calibration = {
                 if (mode === 'auto') {
                     instructions.innerHTML = `<strong>AUTO:</strong> Click on <strong style="color: ${curve.color}">${curve.name}</strong> to trace | Drag to pan | Pinch to zoom`;
                 } else {
-                    instructions.innerHTML = `<strong>MANUAL:</strong> Click to add points | Drag to pan | Pinch/scroll to zoom`;
+                    const guidedHint = curve.imageColor
+                        ? `Hover near <strong style="color: ${curve.color}">${curve.name}</strong> to snap, then click to add`
+                        : `Hover near <strong style="color: ${curve.color}">${curve.name}</strong> to snap, then click to add (or place the first point to learn the line color)`;
+                    instructions.innerHTML = `<strong>GUIDED:</strong> ${guidedHint} | Drag existing points to refine | Drag to pan | Pinch/scroll to zoom`;
                 }
             } else {
-                instructions.textContent = 'Add a curve first, then click to add points';
+                instructions.textContent = 'Add a curve first, then hover or click to add points';
             }
             instructions.style.display = 'block';
         } else {

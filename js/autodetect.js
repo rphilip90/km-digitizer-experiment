@@ -34,6 +34,27 @@ const AutoDetect = {
         return curvePoints;
     },
 
+    // Convert a hex color string to RGB
+    hexToRgb(hex) {
+        if (!hex) return null;
+
+        let normalized = hex.replace('#', '').trim();
+        if (normalized.length === 3) {
+            normalized = normalized.split('').map(char => char + char).join('');
+        }
+
+        if (normalized.length !== 6) return null;
+
+        const value = parseInt(normalized, 16);
+        if (Number.isNaN(value)) return null;
+
+        return {
+            r: (value >> 16) & 255,
+            g: (value >> 8) & 255,
+            b: value & 255
+        };
+    },
+
     // Get color at a specific pixel
     getPixelColor(imageData, x, y, width) {
         const px = Math.round(x);
@@ -51,6 +72,11 @@ const AutoDetect = {
         };
     },
 
+    // Check whether a point is inside the image bounds
+    isWithinBounds(x, y, width, height) {
+        return x >= 0 && y >= 0 && x < width && y < height;
+    },
+
     // Check if two colors are similar within tolerance
     colorMatch(color1, color2) {
         if (!color1 || !color2) return false;
@@ -60,6 +86,93 @@ const AutoDetect = {
                      Math.abs(color1.b - color2.b);
 
         return diff <= this.colorTolerance * 3;
+    },
+
+    // Find the closest pixel matching the target color near the cursor
+    findNearestMatchingPixel(imageData, width, height, targetColor, centerX, centerY, maxRadius = 10) {
+        if (!targetColor) return null;
+
+        const originX = Math.round(centerX);
+        const originY = Math.round(centerY);
+        const radiusSq = maxRadius * maxRadius;
+
+        let bestMatch = null;
+        let bestDistanceSq = Infinity;
+
+        const minX = Math.max(0, originX - maxRadius);
+        const maxX = Math.min(width - 1, originX + maxRadius);
+        const minY = Math.max(0, originY - maxRadius);
+        const maxY = Math.min(height - 1, originY + maxRadius);
+
+        for (let y = minY; y <= maxY; y++) {
+            for (let x = minX; x <= maxX; x++) {
+                const distanceSq = (x - originX) ** 2 + (y - originY) ** 2;
+                if (distanceSq > radiusSq || distanceSq >= bestDistanceSq) continue;
+
+                const color = this.getPixelColor(imageData, x, y, width);
+                if (!this.colorMatch(color, targetColor)) continue;
+
+                bestDistanceSq = distanceSq;
+                bestMatch = {
+                    x,
+                    y,
+                    distance: Math.sqrt(distanceSq)
+                };
+            }
+        }
+
+        return bestMatch;
+    },
+
+    // Collect a local connected run of pixels so the hovered curve segment can be highlighted
+    collectConnectedPixels(imageData, width, height, targetColor, startX, startY, maxRadius = 18, maxPixels = 250) {
+        const originX = Math.round(startX);
+        const originY = Math.round(startY);
+
+        if (!this.isWithinBounds(originX, originY, width, height)) {
+            return [];
+        }
+
+        const seedColor = this.getPixelColor(imageData, originX, originY, width);
+        if (!this.colorMatch(seedColor, targetColor)) {
+            return [];
+        }
+
+        const queue = [{ x: originX, y: originY }];
+        const visited = new Set([`${originX},${originY}`]);
+        const collected = [];
+        const radiusSq = maxRadius * maxRadius;
+        let queueIndex = 0;
+
+        while (queueIndex < queue.length && collected.length < maxPixels) {
+            const current = queue[queueIndex++];
+            collected.push(current);
+
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    if (dx === 0 && dy === 0) continue;
+
+                    const nextX = current.x + dx;
+                    const nextY = current.y + dy;
+                    const key = `${nextX},${nextY}`;
+
+                    if (visited.has(key) || !this.isWithinBounds(nextX, nextY, width, height)) {
+                        continue;
+                    }
+                    visited.add(key);
+
+                    const distanceSq = (nextX - originX) ** 2 + (nextY - originY) ** 2;
+                    if (distanceSq > radiusSq) continue;
+
+                    const nextColor = this.getPixelColor(imageData, nextX, nextY, width);
+                    if (this.colorMatch(nextColor, targetColor)) {
+                        queue.push({ x: nextX, y: nextY });
+                    }
+                }
+            }
+        }
+
+        return collected;
     },
 
     // Find all pixels matching the target color

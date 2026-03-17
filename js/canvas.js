@@ -3,6 +3,7 @@ const Canvas = {
     canvas: null,
     ctx: null,
     image: null,
+    imageData: null,
     scale: 1,
     baseScale: 1,  // Scale to fit image in container
     zoomLevel: 1,  // User zoom multiplier
@@ -18,6 +19,12 @@ const Canvas = {
 
     // Digitization mode: 'manual' or 'auto'
     digitizeMode: 'manual',
+
+    // Guided digitizing state
+    hoverState: null,
+    selectedGuide: null,
+    hoverSnapDistance: 14,
+    hoverHighlightDistance: 22,
 
     // Dragging state
     isDragging: false,
@@ -42,7 +49,7 @@ const Canvas = {
         this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
         this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
         this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
-        this.canvas.addEventListener('mouseleave', this.handleMouseUp.bind(this));
+        this.canvas.addEventListener('mouseleave', this.handleMouseLeave.bind(this));
 
         // Mouse wheel zoom (and trackpad pinch which sends wheel events with ctrlKey)
         this.canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
@@ -72,12 +79,30 @@ const Canvas = {
             const img = new Image();
             img.onload = () => {
                 this.image = img;
+                this.cacheImageData();
+                this.clearInteractionGuides();
                 this.fitImage();
                 resolve(img);
             };
             img.onerror = reject;
             img.src = src;
         });
+    },
+
+    // Cache full-resolution image data for snapping/highlighting
+    cacheImageData() {
+        if (!this.image) {
+            this.imageData = null;
+            return;
+        }
+
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = this.image.width;
+        tempCanvas.height = this.image.height;
+
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(this.image, 0, 0);
+        this.imageData = tempCtx.getImageData(0, 0, this.image.width, this.image.height);
     },
 
     // Fit image to canvas container
@@ -218,6 +243,121 @@ const Canvas = {
         if (zoomEl) {
             zoomEl.textContent = Math.round(this.zoomLevel * 100) + '%';
         }
+    },
+
+    // Clear both hover and selected point guides
+    clearInteractionGuides() {
+        this.hoverState = null;
+        this.selectedGuide = null;
+    },
+
+    // Clear only the transient hover guide
+    clearHoverGuide() {
+        this.hoverState = null;
+    },
+
+    // Convert a hex color to an rgba() string
+    hexToRgba(hex, alpha = 1) {
+        const rgb = AutoDetect.hexToRgb(hex);
+        if (!rgb) {
+            return `rgba(33, 150, 243, ${alpha})`;
+        }
+        return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+    },
+
+    // Convert a screen-space distance into image-space pixels
+    getScaledSearchDistance(screenPixels) {
+        return Math.max(4, Math.min(28, Math.round(screenPixels / Math.max(this.scale, 0.25))));
+    },
+
+    // Check whether an image-space point is within the loaded image
+    isPointInsideImage(imageX, imageY) {
+        return !!this.image &&
+            imageX >= 0 &&
+            imageY >= 0 &&
+            imageX < this.image.width &&
+            imageY < this.image.height;
+    },
+
+    // Build a hover/guide state by snapping to the active curve near the cursor
+    getCurveGuideState(imageX, imageY) {
+        if (!this.image || !this.imageData || !Calibration.isComplete || this.digitizeMode !== 'manual') {
+            return null;
+        }
+
+        const curve = Curves.getActive();
+        if (!curve || !this.isPointInsideImage(imageX, imageY)) {
+            return null;
+        }
+
+        const targetColor = AutoDetect.hexToRgb(curve.imageColor || curve.color);
+        if (!targetColor) {
+            return null;
+        }
+
+        const snapRadius = this.getScaledSearchDistance(this.hoverSnapDistance);
+        const snappedPoint = AutoDetect.findNearestMatchingPixel(
+            this.imageData,
+            this.image.width,
+            this.image.height,
+            targetColor,
+            imageX,
+            imageY,
+            snapRadius
+        );
+
+        if (!snappedPoint) {
+            return null;
+        }
+
+        const dataCoords = Calibration.pixelToData(snappedPoint.x, snappedPoint.y);
+        if (!dataCoords) {
+            return null;
+        }
+
+        const highlightRadius = Math.max(
+            snapRadius + 4,
+            this.getScaledSearchDistance(this.hoverHighlightDistance)
+        );
+
+        return {
+            curveId: curve.id,
+            curveColor: curve.imageColor || curve.color,
+            x: snappedPoint.x,
+            y: snappedPoint.y,
+            dataX: dataCoords.x,
+            dataY: dataCoords.y,
+            highlightPixels: AutoDetect.collectConnectedPixels(
+                this.imageData,
+                this.image.width,
+                this.image.height,
+                targetColor,
+                snappedPoint.x,
+                snappedPoint.y,
+                highlightRadius,
+                260
+            )
+        };
+    },
+
+    // Learn the curve's image color from a manually placed or snapped point
+    learnCurveColor(curve, imageX, imageY, allowOverwrite = false) {
+        if (!curve || !this.imageData || !this.image) return;
+        if (curve.imageColor && !allowOverwrite) return;
+
+        const sampledColor = AutoDetect.getPixelColor(this.imageData, imageX, imageY, this.image.width);
+        if (!sampledColor) return;
+
+        const brightness = (sampledColor.r + sampledColor.g + sampledColor.b) / 3;
+        if (brightness > 248) return;
+
+        Curves.setImageColor(curve.id, AutoDetect.rgbToHex(sampledColor));
+    },
+
+    // Stable key for detecting hover changes without redrawing on every pixel move
+    getGuideStateKey(state) {
+        if (!state) return '';
+        return `${state.curveId}:${state.x}:${state.y}`;
     },
 
     // Handle mouse wheel for zoom (also handles trackpad pinch)
@@ -376,6 +516,9 @@ const Canvas = {
 
         // Draw curve points
         this.drawCurvePoints();
+
+        // Draw guided hover/selection overlays
+        this.drawInteractionGuides();
     },
 
     // Draw grid overlay
@@ -540,6 +683,166 @@ const Canvas = {
         });
     },
 
+    // Draw either the live hover guide or the last selected point guide
+    drawInteractionGuides() {
+        if (!Calibration.isComplete) return;
+
+        if (this.hoverState) {
+            this.drawGuideOverlay(this.hoverState, false);
+            return;
+        }
+
+        if (!this.selectedGuide) return;
+
+        const locatedPoint = Curves.findPointById(this.selectedGuide.pointId);
+        if (!locatedPoint) {
+            this.selectedGuide = null;
+            return;
+        }
+
+        this.drawGuideOverlay({
+            curveId: locatedPoint.curve.id,
+            curveColor: locatedPoint.curve.imageColor || locatedPoint.curve.color,
+            x: locatedPoint.point.px,
+            y: locatedPoint.point.py,
+            dataX: locatedPoint.point.x,
+            dataY: locatedPoint.point.y,
+            highlightPixels: this.selectedGuide.highlightPixels || []
+        }, true);
+    },
+
+    // Draw the local curve highlight, axis guides, labels, and point focus marker
+    drawGuideOverlay(guideState, persistent = false) {
+        if (!guideState) return;
+
+        const bounds = AutoDetect.getCalibrationBounds(Calibration);
+        if (!bounds) return;
+
+        if (guideState.highlightPixels && guideState.highlightPixels.length > 0) {
+            this.drawHighlightedPixels(guideState.highlightPixels, guideState.curveColor, persistent);
+        }
+
+        const pointCanvasX = guideState.x * this.scale + this.offsetX;
+        const pointCanvasY = guideState.y * this.scale + this.offsetY;
+        const leftCanvasX = bounds.left * this.scale + this.offsetX;
+        const rightCanvasX = bounds.right * this.scale + this.offsetX;
+        const topCanvasY = bounds.top * this.scale + this.offsetY;
+        const bottomCanvasY = bounds.bottom * this.scale + this.offsetY;
+
+        const guideColor = persistent ? 'rgba(255, 152, 0, 0.78)' : 'rgba(255, 193, 7, 0.94)';
+        const labelColor = persistent ? 'rgba(255, 152, 0, 0.95)' : 'rgba(33, 33, 33, 0.92)';
+
+        this.ctx.save();
+        this.ctx.strokeStyle = guideColor;
+        this.ctx.lineWidth = persistent ? 2 : 2.5;
+        this.ctx.setLineDash(persistent ? [8, 4] : []);
+        this.ctx.beginPath();
+        this.ctx.moveTo(pointCanvasX, topCanvasY);
+        this.ctx.lineTo(pointCanvasX, bottomCanvasY);
+        this.ctx.moveTo(leftCanvasX, pointCanvasY);
+        this.ctx.lineTo(rightCanvasX, pointCanvasY);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+
+        this.drawGuideHandle(pointCanvasX, bottomCanvasY, guideColor, persistent ? 5 : 6);
+        this.drawGuideHandle(leftCanvasX, pointCanvasY, guideColor, persistent ? 5 : 6);
+
+        this.ctx.beginPath();
+        this.ctx.arc(pointCanvasX, pointCanvasY, persistent ? 8 : 9, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fill();
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeStyle = guideState.curveColor || '#2196F3';
+        this.ctx.stroke();
+
+        this.ctx.beginPath();
+        this.ctx.arc(pointCanvasX, pointCanvasY, persistent ? 13 : 15, 0, Math.PI * 2);
+        this.ctx.lineWidth = persistent ? 2 : 3;
+        this.ctx.strokeStyle = this.hexToRgba(guideState.curveColor, persistent ? 0.35 : 0.6);
+        this.ctx.stroke();
+        this.ctx.restore();
+
+        this.drawGuideLabel(
+            pointCanvasX,
+            Math.min(this.canvas.height - 12, bottomCanvasY + 20),
+            guideState.dataX.toFixed(2),
+            labelColor,
+            'center'
+        );
+
+        this.drawGuideLabel(
+            Math.max(12, leftCanvasX - 10),
+            pointCanvasY,
+            guideState.dataY.toFixed(3),
+            labelColor,
+            'right'
+        );
+    },
+
+    // Draw the highlighted cluster of curve pixels near the snapped point
+    drawHighlightedPixels(pixels, curveColor, persistent = false) {
+        if (!pixels || pixels.length === 0) return;
+
+        const pixelSize = Math.max(3, Math.min(7, this.scale * (persistent ? 3 : 2.5)));
+        const halfSize = pixelSize / 2;
+
+        this.ctx.save();
+        this.ctx.fillStyle = this.hexToRgba(curveColor, persistent ? 0.18 : 0.34);
+        this.ctx.shadowColor = this.hexToRgba(curveColor, persistent ? 0.35 : 0.7);
+        this.ctx.shadowBlur = persistent ? 4 : 8;
+
+        pixels.forEach(pixel => {
+            const canvasX = pixel.x * this.scale + this.offsetX;
+            const canvasY = pixel.y * this.scale + this.offsetY;
+            this.ctx.fillRect(canvasX - halfSize, canvasY - halfSize, pixelSize, pixelSize);
+        });
+
+        this.ctx.restore();
+    },
+
+    // Draw a small highlighted intercept marker on an axis
+    drawGuideHandle(x, y, color, radius) {
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, radius, 0, Math.PI * 2);
+        this.ctx.fillStyle = color;
+        this.ctx.fill();
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, Math.max(2, radius - 2), 0, Math.PI * 2);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fill();
+        this.ctx.restore();
+    },
+
+    // Draw a compact guide label near an axis intercept
+    drawGuideLabel(anchorX, anchorY, text, backgroundColor, align = 'center') {
+        this.ctx.save();
+        this.ctx.font = '12px sans-serif';
+        this.ctx.textBaseline = 'middle';
+
+        const paddingX = 6;
+        const paddingY = 4;
+        const textWidth = this.ctx.measureText(text).width;
+        const boxWidth = textWidth + paddingX * 2;
+        const boxHeight = 20;
+
+        let boxX = anchorX - boxWidth / 2;
+        if (align === 'right') {
+            boxX = anchorX - boxWidth;
+        } else if (align === 'left') {
+            boxX = anchorX;
+        }
+
+        boxX = Math.max(4, Math.min(this.canvas.width - boxWidth - 4, boxX));
+        const boxY = Math.max(4, Math.min(this.canvas.height - boxHeight - 4, anchorY - boxHeight / 2));
+
+        this.ctx.fillStyle = backgroundColor;
+        this.ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(text, boxX + paddingX, boxY + boxHeight / 2 + 0.5);
+        this.ctx.restore();
+    },
+
     // Convert screen coordinates to image coordinates
     screenToImage(screenX, screenY) {
         const rect = this.canvas.getBoundingClientRect();
@@ -579,6 +882,10 @@ const Canvas = {
             const found = Curves.findPointAt(x, y, 10 / this.scale);
             if (found) {
                 Curves.setActive(found.curve.id);
+                this.selectedGuide = {
+                    pointId: found.point.id,
+                    highlightPixels: []
+                };
                 this.draw();
                 return;
             }
@@ -595,10 +902,25 @@ const Canvas = {
             // Auto-detect curve
             this.autoDetectCurve(x, y);
         } else {
-            // Manual mode - add single point
-            const dataCoords = Calibration.pixelToData(x, y);
+            // Guided mode - snap to the curve when possible, otherwise keep the raw click
+            const guideState = this.getCurveGuideState(x, y);
+            const pointX = guideState ? guideState.x : x;
+            const pointY = guideState ? guideState.y : y;
+            const dataCoords = guideState
+                ? { x: guideState.dataX, y: guideState.dataY }
+                : Calibration.pixelToData(pointX, pointY);
+
             if (dataCoords) {
-                Curves.addPoint(x, y, dataCoords.x, dataCoords.y);
+                const newPoint = Curves.addPoint(pointX, pointY, dataCoords.x, dataCoords.y);
+                this.learnCurveColor(curve, pointX, pointY, !!guideState);
+                if (guideState) {
+                    guideState.curveColor = curve.imageColor || curve.color;
+                }
+                this.hoverState = guideState;
+                this.selectedGuide = newPoint ? {
+                    pointId: newPoint.id,
+                    highlightPixels: guideState?.highlightPixels || []
+                } : null;
                 App.saveState();
                 this.draw();
             }
@@ -607,16 +929,8 @@ const Canvas = {
 
     // Auto-detect and trace curve from clicked point
     autoDetectCurve(clickX, clickY) {
-        if (!this.image) return;
-
-        // Create temporary canvas to get image data
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = this.image.width;
-        tempCanvas.height = this.image.height;
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.drawImage(this.image, 0, 0);
-
-        const imageData = tempCtx.getImageData(0, 0, this.image.width, this.image.height);
+        if (!this.image || !this.imageData) return;
+        const imageData = this.imageData;
 
         // Detect curve points
         const detectedPoints = AutoDetect.detectCurve(
@@ -670,14 +984,12 @@ const Canvas = {
             return;
         }
 
-        // Create temporary canvas to get image data
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = this.image.width;
-        tempCanvas.height = this.image.height;
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.drawImage(this.image, 0, 0);
+        if (!this.imageData) {
+            alert('Image data is not available yet. Please reload the image.');
+            return;
+        }
 
-        const imageData = tempCtx.getImageData(0, 0, this.image.width, this.image.height);
+        const imageData = this.imageData;
 
         // Detect all curves
         const detectedCurves = AutoDetect.detectAllCurves(
@@ -700,7 +1012,9 @@ const Canvas = {
         // Add each detected curve
         detectedCurves.forEach((detected, index) => {
             // Create new curve with detected color
-            const curve = Curves.create(`Curve ${index + 1}`, detected.hexColor);
+            Curves.create(`Curve ${index + 1}`, detected.hexColor, {
+                imageColor: detected.hexColor
+            });
 
             // Add points to this curve
             detected.points.forEach(point => {
@@ -733,6 +1047,9 @@ const Canvas = {
             // Switch to that curve and delete the point
             Curves.setActive(found.curve.id);
             Curves.deletePoint(found.point.id);
+            if (this.selectedGuide?.pointId === found.point.id) {
+                this.selectedGuide = null;
+            }
             App.saveState();
             this.draw();
         }
@@ -748,6 +1065,8 @@ const Canvas = {
 
         const { x, y } = this.screenToImage(e.clientX, e.clientY);
         const found = Curves.findPointAt(x, y, 10 / this.scale);
+        const hadHoverGuide = !!this.hoverState;
+        this.clearHoverGuide();
 
         if (found && Calibration.isComplete && this.digitizeMode === 'manual') {
             // Start dragging an existing point
@@ -755,6 +1074,10 @@ const Canvas = {
             this.dragPoint = found.point;
             this.dragCurve = found.curve;
             Curves.setActive(found.curve.id);
+            this.selectedGuide = {
+                pointId: found.point.id,
+                highlightPixels: []
+            };
             this.canvas.style.cursor = 'grabbing';
         } else {
             // Prepare for potential pan (at any zoom level)
@@ -763,14 +1086,24 @@ const Canvas = {
             this.lastPanY = e.clientY;
             this.canvas.style.cursor = 'grabbing';
         }
+
+        if (hadHoverGuide) {
+            this.draw();
+        }
     },
 
     // Handle mouse move (drag)
     handleMouseMove(e) {
         const { x, y } = this.screenToImage(e.clientX, e.clientY);
+        const previousHoverKey = this.getGuideStateKey(this.hoverState);
+
+        if (!this.isPanning && !this.isDragging) {
+            this.hoverState = this.getCurveGuideState(x, y);
+        }
 
         // Update coordinate display
-        this.updateCoordsDisplay(x, y);
+        const coordsSource = this.hoverState || { x, y };
+        this.updateCoordsDisplay(coordsSource.x, coordsSource.y);
 
         // Update cursor - crosshair when idle, grabbing when panning
         if (!this.isPanning && !this.isDragging) {
@@ -803,8 +1136,14 @@ const Canvas = {
             return;
         }
 
-        // Handle point dragging
-        if (!this.isDragging || !this.dragPoint) return;
+        // Redraw only if the hover snap actually moved
+        if (!this.isDragging || !this.dragPoint) {
+            const nextHoverKey = this.getGuideStateKey(this.hoverState);
+            if (previousHoverKey !== nextHoverKey) {
+                this.draw();
+            }
+            return;
+        }
 
         this.hasMoved = true;
         const dataCoords = Calibration.pixelToData(x, y);
@@ -855,12 +1194,23 @@ const Canvas = {
         setTimeout(() => { this.wasPanning = false; }, 50);
     },
 
+    // Clear transient hover guides when the cursor leaves the canvas
+    handleMouseLeave(e) {
+        this.handleMouseUp(e);
+        if (this.hoverState) {
+            this.hoverState = null;
+            this.draw();
+        }
+    },
+
     // Clear canvas
     clear() {
         this.image = null;
+        this.imageData = null;
         this.zoomLevel = 1;
         this.panX = 0;
         this.panY = 0;
+        this.clearInteractionGuides();
         if (this.ctx) {
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         }

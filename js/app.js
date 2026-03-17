@@ -53,6 +53,7 @@ const App = {
                 Canvas.draw();
             } else {
                 Calibration.start();
+                Canvas.draw();
             }
         });
 
@@ -377,6 +378,9 @@ const App = {
         // Restore previous state
         const state = this.undoStack.pop();
         Curves.deserialize(state);
+        if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
+            Canvas.clearInteractionGuides();
+        }
         Canvas.draw();
 
         this.updateUndoRedoButtons();
@@ -392,6 +396,9 @@ const App = {
         // Restore redo state
         const state = this.redoStack.pop();
         Curves.deserialize(state);
+        if (typeof Canvas !== 'undefined' && typeof Canvas.clearInteractionGuides === 'function') {
+            Canvas.clearInteractionGuides();
+        }
         Canvas.draw();
 
         this.updateUndoRedoButtons();
