@@ -212,7 +212,30 @@ const AutoDetect = {
         return matches;
     },
 
-    // For KM-like flat segments, snap to the left edge of the horizontal step
+    // Get matching X pixels for a single Y row near a reference X
+    getMatchingXsAtY(imageData, width, height, targetColor, centerX, y, xRadius = 3) {
+        const px = Math.round(centerX);
+        const py = Math.round(y);
+
+        if (!this.isWithinBounds(px, py, width, height)) {
+            return [];
+        }
+
+        const matches = [];
+        const minX = Math.max(0, px - xRadius);
+        const maxX = Math.min(width - 1, px + xRadius);
+
+        for (let x = minX; x <= maxX; x++) {
+            const color = this.getPixelColor(imageData, x, py, width);
+            if (this.colorMatch(color, targetColor)) {
+                matches.push(x);
+            }
+        }
+
+        return matches;
+    },
+
+    // For KM-like flat segments, snap to the nearest endpoint of the horizontal step
     findHorizontalStepAnchor(
         imageData,
         width,
@@ -317,10 +340,156 @@ const AutoDetect = {
             return null;
         }
 
+        const anchorX = Math.abs(originX - leftX) <= Math.abs(originX - rightX) ? leftX : rightX;
+        const anchorMatches = this.getMatchingYsAtX(
+            imageData,
+            width,
+            height,
+            targetColor,
+            anchorX,
+            plateauY,
+            yRadius + 1
+        );
+        const anchorY = anchorMatches.length > 0
+            ? Math.round(this.findMedian(anchorMatches))
+            : Math.round((leftY + rightY) / 2);
+
         return {
-            x: leftX,
-            y: Math.round((leftY + rightY) / 2),
-            segmentWidth: plateauWidth
+            x: anchorX,
+            y: anchorY,
+            segmentWidth: plateauWidth,
+            leftX,
+            rightX,
+            distanceToAnchor: Math.abs(originX - anchorX)
+        };
+    },
+
+    // For KM-like vertical drops, snap to the nearest endpoint of the vertical step
+    findVerticalStepAnchor(
+        imageData,
+        width,
+        height,
+        targetColor,
+        startX,
+        startY,
+        maxScanDistance = 120,
+        xRadius = 3,
+        gapTolerance = 2,
+        minDropHeight = 10,
+        verticalTolerance = 3
+    ) {
+        const originX = Math.round(startX);
+        const originY = Math.round(startY);
+
+        if (!this.isWithinBounds(originX, originY, width, height)) {
+            return null;
+        }
+
+        const seedMatches = this.getMatchingXsAtY(
+            imageData,
+            width,
+            height,
+            targetColor,
+            originX,
+            originY,
+            xRadius + 1
+        );
+
+        if (seedMatches.length === 0) {
+            return null;
+        }
+
+        const stepX = Math.round(this.findMedian(seedMatches));
+
+        const scanBoundary = (direction) => {
+            let lastMatchY = originY;
+            let gapCount = 0;
+
+            for (let step = 1; step <= maxScanDistance; step++) {
+                const y = originY + direction * step;
+                if (!this.isWithinBounds(stepX, y, width, height)) break;
+
+                const xMatches = this.getMatchingXsAtY(
+                    imageData,
+                    width,
+                    height,
+                    targetColor,
+                    stepX,
+                    y,
+                    xRadius
+                );
+
+                if (xMatches.length > 0) {
+                    lastMatchY = y;
+                    gapCount = 0;
+                } else {
+                    gapCount++;
+                    if (gapCount > gapTolerance) break;
+                }
+            }
+
+            return lastMatchY;
+        };
+
+        const topY = scanBoundary(-1);
+        const bottomY = scanBoundary(1);
+        const dropHeight = bottomY - topY;
+
+        if (dropHeight < minDropHeight) {
+            return null;
+        }
+
+        const topMatches = this.getMatchingXsAtY(
+            imageData,
+            width,
+            height,
+            targetColor,
+            stepX,
+            topY,
+            xRadius + 1
+        );
+        const bottomMatches = this.getMatchingXsAtY(
+            imageData,
+            width,
+            height,
+            targetColor,
+            stepX,
+            bottomY,
+            xRadius + 1
+        );
+
+        if (topMatches.length === 0 || bottomMatches.length === 0) {
+            return null;
+        }
+
+        const topX = this.findMedian(topMatches);
+        const bottomX = this.findMedian(bottomMatches);
+
+        if (Math.abs(topX - bottomX) > verticalTolerance) {
+            return null;
+        }
+
+        const anchorY = Math.abs(originY - topY) <= Math.abs(originY - bottomY) ? topY : bottomY;
+        const anchorMatches = this.getMatchingXsAtY(
+            imageData,
+            width,
+            height,
+            targetColor,
+            stepX,
+            anchorY,
+            xRadius + 1
+        );
+        const anchorX = anchorMatches.length > 0
+            ? Math.round(this.findMedian(anchorMatches))
+            : Math.round((topX + bottomX) / 2);
+
+        return {
+            x: anchorX,
+            y: anchorY,
+            segmentHeight: dropHeight,
+            topY,
+            bottomY,
+            distanceToAnchor: Math.abs(originY - anchorY)
         };
     },
 

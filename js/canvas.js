@@ -311,9 +311,13 @@ const Canvas = {
         }
 
         const xPixelRange = Math.abs(Calibration.points.xMax.x - Calibration.points.xMin.x);
+        const yPixelRange = Math.abs(Calibration.points.yMin.y - Calibration.points.yMax.y);
         const plateauScanDistance = Math.max(24, Math.min(220, Math.round(xPixelRange * 0.35)));
         const plateauWidthThreshold = Math.max(10, Math.round(xPixelRange * 0.015));
-        const stepAnchor = AutoDetect.findHorizontalStepAnchor(
+        const dropScanDistance = Math.max(24, Math.min(220, Math.round(yPixelRange * 0.35)));
+        const dropHeightThreshold = Math.max(10, Math.round(yPixelRange * 0.015));
+
+        const horizontalAnchor = AutoDetect.findHorizontalStepAnchor(
             this.imageData,
             this.image.width,
             this.image.height,
@@ -326,8 +330,29 @@ const Canvas = {
             plateauWidthThreshold,
             3
         );
+        const verticalAnchor = AutoDetect.findVerticalStepAnchor(
+            this.imageData,
+            this.image.width,
+            this.image.height,
+            targetColor,
+            snappedPoint.x,
+            snappedPoint.y,
+            dropScanDistance,
+            3,
+            2,
+            dropHeightThreshold,
+            3
+        );
 
-        const guidePoint = stepAnchor || snappedPoint;
+        let guidePoint = snappedPoint;
+        if (horizontalAnchor && verticalAnchor) {
+            guidePoint = horizontalAnchor.distanceToAnchor <= verticalAnchor.distanceToAnchor
+                ? horizontalAnchor
+                : verticalAnchor;
+        } else {
+            guidePoint = horizontalAnchor || verticalAnchor || snappedPoint;
+        }
+
         const dataCoords = Calibration.pixelToData(guidePoint.x, guidePoint.y);
         if (!dataCoords) {
             return null;
