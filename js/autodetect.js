@@ -175,6 +175,155 @@ const AutoDetect = {
         return collected;
     },
 
+    // Find the median value from a numeric list
+    findMedian(values) {
+        if (!values || values.length === 0) return null;
+
+        const sorted = [...values].sort((a, b) => a - b);
+        const middle = Math.floor(sorted.length / 2);
+
+        if (sorted.length % 2 === 0) {
+            return (sorted[middle - 1] + sorted[middle]) / 2;
+        }
+
+        return sorted[middle];
+    },
+
+    // Get matching Y pixels for a single X column near a reference Y
+    getMatchingYsAtX(imageData, width, height, targetColor, x, centerY, yRadius = 3) {
+        const px = Math.round(x);
+        const py = Math.round(centerY);
+
+        if (!this.isWithinBounds(px, py, width, height)) {
+            return [];
+        }
+
+        const matches = [];
+        const minY = Math.max(0, py - yRadius);
+        const maxY = Math.min(height - 1, py + yRadius);
+
+        for (let y = minY; y <= maxY; y++) {
+            const color = this.getPixelColor(imageData, px, y, width);
+            if (this.colorMatch(color, targetColor)) {
+                matches.push(y);
+            }
+        }
+
+        return matches;
+    },
+
+    // For KM-like flat segments, snap to the left edge of the horizontal step
+    findHorizontalStepAnchor(
+        imageData,
+        width,
+        height,
+        targetColor,
+        startX,
+        startY,
+        maxScanDistance = 120,
+        yRadius = 3,
+        gapTolerance = 2,
+        minPlateauWidth = 10,
+        horizontalTolerance = 3
+    ) {
+        const originX = Math.round(startX);
+        const originY = Math.round(startY);
+
+        if (!this.isWithinBounds(originX, originY, width, height)) {
+            return null;
+        }
+
+        const seedMatches = this.getMatchingYsAtX(
+            imageData,
+            width,
+            height,
+            targetColor,
+            originX,
+            originY,
+            yRadius + 1
+        );
+
+        if (seedMatches.length === 0) {
+            return null;
+        }
+
+        const plateauY = Math.round(this.findMedian(seedMatches));
+
+        const scanBoundary = (direction) => {
+            let lastMatchX = originX;
+            let gapCount = 0;
+
+            for (let step = 1; step <= maxScanDistance; step++) {
+                const x = originX + direction * step;
+                if (!this.isWithinBounds(x, plateauY, width, height)) break;
+
+                const yMatches = this.getMatchingYsAtX(
+                    imageData,
+                    width,
+                    height,
+                    targetColor,
+                    x,
+                    plateauY,
+                    yRadius
+                );
+
+                if (yMatches.length > 0) {
+                    lastMatchX = x;
+                    gapCount = 0;
+                } else {
+                    gapCount++;
+                    if (gapCount > gapTolerance) break;
+                }
+            }
+
+            return lastMatchX;
+        };
+
+        const leftX = scanBoundary(-1);
+        const rightX = scanBoundary(1);
+        const plateauWidth = rightX - leftX;
+
+        if (plateauWidth < minPlateauWidth) {
+            return null;
+        }
+
+        const leftMatches = this.getMatchingYsAtX(
+            imageData,
+            width,
+            height,
+            targetColor,
+            leftX,
+            plateauY,
+            yRadius + 1
+        );
+        const rightMatches = this.getMatchingYsAtX(
+            imageData,
+            width,
+            height,
+            targetColor,
+            rightX,
+            plateauY,
+            yRadius + 1
+        );
+
+        if (leftMatches.length === 0 || rightMatches.length === 0) {
+            return null;
+        }
+
+        const leftY = this.findMedian(leftMatches);
+        const rightY = this.findMedian(rightMatches);
+
+        if (Math.abs(leftY - rightY) > horizontalTolerance) {
+            return null;
+        }
+
+        return {
+            x: leftX,
+            y: Math.round((leftY + rightY) / 2),
+            segmentWidth: plateauWidth
+        };
+    },
+
     // Find all pixels matching the target color
     findMatchingPixels(imageData, width, height, targetColor) {
         const matching = [];

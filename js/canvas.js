@@ -310,7 +310,25 @@ const Canvas = {
             return null;
         }
 
-        const dataCoords = Calibration.pixelToData(snappedPoint.x, snappedPoint.y);
+        const xPixelRange = Math.abs(Calibration.points.xMax.x - Calibration.points.xMin.x);
+        const plateauScanDistance = Math.max(24, Math.min(220, Math.round(xPixelRange * 0.35)));
+        const plateauWidthThreshold = Math.max(10, Math.round(xPixelRange * 0.015));
+        const stepAnchor = AutoDetect.findHorizontalStepAnchor(
+            this.imageData,
+            this.image.width,
+            this.image.height,
+            targetColor,
+            snappedPoint.x,
+            snappedPoint.y,
+            plateauScanDistance,
+            3,
+            2,
+            plateauWidthThreshold,
+            3
+        );
+
+        const guidePoint = stepAnchor || snappedPoint;
+        const dataCoords = Calibration.pixelToData(guidePoint.x, guidePoint.y);
         if (!dataCoords) {
             return null;
         }
@@ -323,8 +341,8 @@ const Canvas = {
         return {
             curveId: curve.id,
             curveColor: curve.imageColor || curve.color,
-            x: snappedPoint.x,
-            y: snappedPoint.y,
+            x: guidePoint.x,
+            y: guidePoint.y,
             dataX: dataCoords.x,
             dataY: dataCoords.y,
             highlightPixels: AutoDetect.collectConnectedPixels(
@@ -332,8 +350,8 @@ const Canvas = {
                 this.image.width,
                 this.image.height,
                 targetColor,
-                snappedPoint.x,
-                snappedPoint.y,
+                guidePoint.x,
+                guidePoint.y,
                 highlightRadius,
                 260
             )
