@@ -47,6 +47,17 @@ header h1 {
     font-weight: 600;
 }
 
+.prototype-banner {
+    margin: 1rem 1.5rem 0;
+    padding: 0.9rem 1rem;
+    border-left: 4px solid #c2410c;
+    border-radius: 10px;
+    background: #fff7ed;
+    color: #7c2d12;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+}
+
 .header-buttons {
     display: flex;
     gap: 0.5rem;

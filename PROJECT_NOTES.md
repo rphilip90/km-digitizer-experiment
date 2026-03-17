@@ -3,6 +3,9 @@
 ## Overview
 A web-based tool for digitizing Kaplan-Meier and Cumulative Incidence Function curves from published images. Built for HTA/HEOR work.
 
+## Status
+This browser-first prototype is now parked for experimental/manual use only. The experimental semantic extractor and batch flow are not reliable enough for production KM/CAM extraction. New production-facing automation is moving to a separate hosted `SurvdigitizeR` workflow.
+
 ## Live URL
 https://rphilip90.github.io/km-digitizer/
 
@@ -29,12 +32,11 @@ https://github.com/rphilip90/km-digitizer
 - [x] Copy to clipboard
 
 ## Known Issues / TODO
-- [ ] Point placement may still be slightly off in some cases - needs testing
-- [ ] Multi-curve point placement reported as problematic - may need debugging
-- [ ] Could add: IPD reconstruction using Guyot method
-- [ ] Could add: At-risk table digitization
-- [ ] Could add: Curve smoothing/interpolation
-- [ ] Consider renaming repo to something more discrete
+- [x] Prototype parked due to unreliable browser-side semantic extraction
+- [ ] Manual point placement remains usable, but auto curve detection is not production-ready
+- [ ] Axis inference and OCR-style heuristics remain unreliable on mixed-quality figures
+- [ ] Batch processing in this repo should be treated as experimental only
+- [ ] Production automation is moving to a separate Oracle-hosted `SurvdigitizeR` pipeline
 
 ## File Structure
 ```
